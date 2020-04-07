@@ -89,6 +89,8 @@ const configuration = {
 
 let peerConnection = null;
 let localStream = null;
+let senderDataChannel = null;
+let receiverDataChannel = null;
 let localCanvasStream = null;
 let remoteStream = null;
 let roomDialog = null;
@@ -115,11 +117,13 @@ async function createRoom() {
     console.log(canvasEl);
     let localCanvasStream = canvasEl.captureStream();
 
-    // localStream.getTracks().forEach(track => {
-    //     peerConnection.addTrack(track, localStream);
-    // });
-    peerConnection.addStream(localCanvasStream);
-
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+    });
+    peerConnection.addTrack(localCanvasStream);
+    senderDataChannel = peerConnection.createDataChannel("senderDataChannel");
+    sendChannel.onopen = function(){alert('data sending on');};
+sendChannel.onclose = function(){alert('data sending off');};
     // Code for collecting ICE candidates below
     const callerCandidatesCollection = roomRef.collection('callerCandidates');
 
@@ -207,6 +211,12 @@ async function joinRoomById(roomId) {
     if (roomSnapshot.exists) {
         console.log('Create PeerConnection with configuration: ', configuration);
         peerConnection = new RTCPeerConnection(configuration);
+        peerConnection.ondatachannel = function(event) {
+            receiverDataChannel = event.channel;
+            receiverDataChannel.onmessage = (message) => {console.log('got message:', message);};
+            receiverDataChannel.onopen = ()=>{alert('receiver data channel on')};
+            receiverDataChannel.onclose = ()=>{alert('receiver data channel off')};
+  }
         registerPeerConnectionListeners();
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
