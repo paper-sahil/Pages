@@ -11,12 +11,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
     try {
         let app = firebase.app();
+        
 
     } catch (e) {
         console.error(e);
         document.write('Error loading the Firebase SDK, check the console.');
     }
 });
+function googleLogin() {
+    const provider = new firebase.auth().GoogleAuthProvider();
+    firebase.auth().signInWithPopup(provider)
+        .then(result => {
+            const user = result.user;
+            alert(`Hello ${user.displayName}`);
+            console.log(result);
+            console.log(user);
+        }).catch(console.error);
+}
 // 3. Create the Vue instance
 new Vue({
     el: '#app',
@@ -34,7 +45,7 @@ new Vue({
         //     strokeWidth: 2
         //   }
     }
-})
+});
 var $ = function (id) { return document.getElementById(id) };
 let canvasEl = $('c');
 var canvas = this.__canvas = new fabric.Canvas('c', {
@@ -53,6 +64,7 @@ brush.color = "#f00";
 canvas.freeDrawingBrush = brush;
 
 
+
 if (canvas.freeDrawingBrush) {
     canvas.freeDrawingBrush.shadow = new fabric.Shadow({
         blur: 0.5,
@@ -63,16 +75,7 @@ if (canvas.freeDrawingBrush) {
     });
 }
 
-function googleLogin() {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    firebase.auth().signInWithPopup(provider)
-        .then(result => {
-            const user = result.user;
-            alert(`Hello ${user.displayName}`);
-            console.log(result);
-            console.log(user);
-        }).catch(console.error);
-}
+
 mdc.ripple.MDCRipple.attachTo(document.querySelector('.mdc-button'));
 
 const configuration = {
@@ -120,10 +123,17 @@ async function createRoom() {
     localStream.getTracks().forEach(track => {
         peerConnection.addTrack(track, localStream);
     });
-    peerConnection.addTrack(localCanvasStream);
-    senderDataChannel = peerConnection.createDataChannel("senderDataChannel");
-    sendChannel.onopen = function(){alert('data sending on');};
-sendChannel.onclose = function(){alert('data sending off');};
+    peerConnection.addStream(localCanvasStream);
+
+    senderDataChannel = peerConnection.createDataChannel("sender Data Channel");
+    senderDataChannel.onopen = function () {
+        alert('data sending on');
+        canvas.on('object:added', (e) => { senderDataChannel.send(JSON.stringify(canvas)); });
+        canvas.on('object:removed', (e) => { senderDataChannel.send(JSON.stringify(canvas)); });
+        canvas.on('object:modified', (e) => { senderDataChannel.send(JSON.stringify(canvas)); });
+    };
+    senderDataChannel.onclose = function () { alert('data sending off'); };
+
     // Code for collecting ICE candidates below
     const callerCandidatesCollection = roomRef.collection('callerCandidates');
 
@@ -202,6 +212,12 @@ function joinRoom() {
     roomDialog.open();
 }
 
+var handleJsonEvent = (msg) => {
+    canvas.clear().renderAll();
+    canvas.loadFromJSON(msg.data);
+    canvas.renderAll();
+}
+
 async function joinRoomById(roomId) {
     const db = firebase.firestore();
     const roomRef = db.collection('rooms').doc(`${roomId}`);
@@ -211,17 +227,17 @@ async function joinRoomById(roomId) {
     if (roomSnapshot.exists) {
         console.log('Create PeerConnection with configuration: ', configuration);
         peerConnection = new RTCPeerConnection(configuration);
-        peerConnection.ondatachannel = function(event) {
+        peerConnection.ondatachannel = function (event) {
             receiverDataChannel = event.channel;
-            receiverDataChannel.onmessage = (message) => {console.log('got message:', message);};
-            receiverDataChannel.onopen = ()=>{alert('receiver data channel on')};
-            receiverDataChannel.onclose = ()=>{alert('receiver data channel off')};
-  }
+            receiverDataChannel.onmessage = handleJsonEvent;
+            receiverDataChannel.onopen = () => { alert('receiver data channel on') };
+            receiverDataChannel.onclose = () => { alert('receiver data channel off') };
+        }
         registerPeerConnectionListeners();
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
         });
-  
+
         // Code for collecting ICE candidates below
         const calleeCandidatesCollection = roomRef.collection('calleeCandidates');
         peerConnection.addEventListener('icecandidate', event => {
@@ -237,16 +253,15 @@ async function joinRoomById(roomId) {
         peerConnection.addEventListener('track', event => {
             try {
                 console.log('streams: ', event.streams);
-            console.log('Got remote track:', event.streams[0]);
-            $('remoteVideo').srcObject = event.streams[0];
-            event.streams[0].getTracks().forEach(track => {
-                console.log('Add a track to the remoteStream:', track);
-                remoteStream.addTrack(track);
-            });
+                console.log('Got remote track:', event.streams[0]);
+                event.streams[0].getTracks().forEach(track => {
+                    console.log('Add a track to the remoteStream:', track);
+                    remoteStream.addTrack(track);
+                });
             } catch (error) {
                 console.error(error);
             }
-            
+
         });
 
         // Code for creating SDP answer below
